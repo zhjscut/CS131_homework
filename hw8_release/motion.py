@@ -38,9 +38,15 @@ def lucas_kanade(img1, img2, keypoints, window_size=5):
         # In order to achieve more accurate results, image brightness at subpixel
         # locations can be computed using bilinear interpolation.
         y = int(round(y)); x = int(round(x))
-
+        
         ### YOUR CODE HERE
-        pass
+        a = Ix[x - window_size // 2: x + window_size // 2 + 1, y - window_size // 2: y + window_size // 2 + 1]
+        Ax = np.reshape(Iy[y - window_size // 2: y + window_size // 2 + 1, x - window_size // 2: x + window_size // 2 + 1], (window_size ** 2, 1))
+        Ay = np.reshape(Ix[y - window_size // 2: y + window_size // 2 + 1, x - window_size // 2: x + window_size // 2 + 1], (window_size ** 2, 1))
+        b = -np.reshape(It[y - window_size // 2: y + window_size // 2 + 1, x - window_size // 2: x + window_size // 2 + 1], (window_size ** 2, 1))
+        A = np.hstack((Ax, Ay))
+        X = np.linalg.inv(A.T.dot(A)).dot(A.T).dot(b).flatten()
+        flow_vectors.append(X)
         ### END YOUR CODE
 
     flow_vectors = np.array(flow_vectors)
@@ -86,7 +92,13 @@ def iterative_lucas_kanade(img1, img2, keypoints,
 
         # TODO: Compute inverse of G at point (x1, y1)
         ### YOUR CODE HERE
-        pass
+        Ixx = Iy[y1 - window_size // 2: y1 + window_size // 2 + 1, x1 - window_size // 2: x1 + window_size // 2 + 1]
+        Iyy = Ix[y1 - window_size // 2: y1 + window_size // 2 + 1, x1 - window_size // 2: x1 + window_size // 2 + 1]
+        Ix_2 = np.sum(Ixx ** 2)
+        Iy_2 = np.sum(Iyy ** 2)
+        IxIy = np.sum(Ixx * Iyy)
+        G = np.array([[Ix_2, IxIy], [IxIy, Iy_2]])
+        assert G.shape == (2,2), 'shape error'
         ### END YOUR CODE
 
         # iteratively update flow vector
@@ -97,7 +109,11 @@ def iterative_lucas_kanade(img1, img2, keypoints,
 
             # TODO: Compute bk and vk = inv(G) x bk
             ### YOUR CODE HERE
-            pass
+            img1_batch = img1[y1 - window_size // 2: y1 + window_size // 2 + 1, x1 - window_size // 2: x1 + window_size // 2 + 1]
+            img2_batch = img2[y1 - window_size // 2: y1 + window_size // 2 + 1, x1 - window_size // 2: x1 + window_size // 2 + 1]
+            dIk = img1_batch - img2_batch
+            bk = np.array([np.sum(dIk * Ixx), np.sum(dIk * Iyy)])
+            vk = np.linalg.inv(G).dot(bk)
             ### END YOUR CODE
 
             # Update flow vector by vk
@@ -159,7 +175,8 @@ def compute_error(patch1, patch2):
     assert patch1.shape == patch2.shape, 'Differnt patch shapes'
     error = 0
     ### YOUR CODE HERE
-    pass
+    error = np.mean((patch1 - patch2) ** 2)
+    # print(error)
     ### END YOUR CODE
     return error
 

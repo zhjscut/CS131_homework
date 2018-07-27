@@ -33,7 +33,12 @@ class PCA(object):
         # YOUR CODE HERE
         # 1. Compute the mean and store it in self.mean
         # 2. Apply either method to `X_centered`
-        pass
+        self.mean = np.mean(X, axis=0)
+        X_centered = X - self.mean
+        if method == 'svd':
+            self.W_pca, vals = self._svd(X_centered)
+        else:
+            self.W_pca, vals = _eigen_decomp(X_centered)
         # END YOUR CODE
 
         # Make sure that X_centered has mean zero
@@ -71,7 +76,11 @@ class PCA(object):
         #     1. compute the covariance matrix of X, of shape (D, D)
         #     2. compute the eigenvalues and eigenvectors of the covariance matrix
         #     3. Sort both of them in decreasing order (ex: 1.0 > 0.5 > 0.0 > -0.2 > -1.2)
-        pass
+        covar = np.dot(X.T, X) / (N-1)
+        e_vals, e_vecs = np.linalg.eig(covar)
+        index = np.flipud(np.argsort(e_vals))
+        e_vals = e_vals[index]
+        e_vecs = e_vecs[:,index]
         # END YOUR CODE
 
         # Check the output shapes
@@ -96,7 +105,19 @@ class PCA(object):
         # YOUR CODE HERE
         # Here, compute the SVD of X
         # Make sure to return vecs as the matrix of vectors where each column is a singular vector
-        pass
+        _, vals, vecs_T = scipy.linalg.svd(X)
+        vecs = vecs_T.T
+        # num_values = U.shape[1]
+        # U = U[:, 0:num_values]
+        # sigma = sigma[0:num_values]  
+        # V = V[0:num_values, :]
+
+        # sigma = np.diag(sigma)
+        # if sigma.shape[1] < V.shape[0]: #最后要把这两段放进我的svd函数代码里。svd的重建有时是需要补全零行或全零列的！
+            # sigma = np.hstack((sigma, np.zeros((sigma.shape[0], V.shape[0] - sigma.shape[1]))))
+        # if sigma.shape[0] < U.shape[1]:
+            # sigma = np.vstack((sigma, np.zeros((U.shape[1] - sigma.shape[0], sigma.shape[1]))))        
+        # print(np.dot(np.dot(U, sigma), V))
         # END YOUR CODE
         assert vecs.shape == (D, D)
         K = min(N, D)
@@ -120,7 +141,8 @@ class PCA(object):
         # We need to modify X in two steps:
         #     1. first substract the mean stored during `fit`
         #     2. then project onto a subspace of dimension `n_components` using `self.W_pca`
-        pass
+        X_center = X - self.mean
+        X_proj = np.dot(X_center, self.W_pca[:, :n_components])                
         # END YOUR CODE
 
         assert X_proj.shape == (N, n_components), "X_proj doesn't have the right shape"
@@ -146,7 +168,17 @@ class PCA(object):
         # Steps:
         #     1. project back onto the original space of dimension D
         #     2. add the mean that we substracted in `transform`
-        pass
+        # U, sigma, V = scipy.linalg.svd(self.W_pca[:, :n_components]) #通过svd对宽高不相等的矩阵求逆
+        # #手动对sigma求逆，因为是对角阵所以只需对角线上元素取倒数，在封装好的函数里可能会被当做普通矩阵处理，为了节省时间手动求逆
+        # sigma[np.abs(sigma)<1e-5] = 1e-5 #防止取倒数时爆炸 
+        # sigma = 1 / sigma
+        # sigma = np.diag(sigma)
+        # sigma = np.hstack((sigma, np.zeros((sigma.shape[0], U.shape[0] - sigma.shape[1]))))
+        # invert = np.dot(np.dot(V.T, sigma), U.T)  #公式上是V * S-1 * U.T，且svd函数算出来的V是V.T，所以语句中的V就变成了V.T
+        # X_center = np.dot(X_proj, invert)        
+        # X = X_center + self.mean
+        X=X_proj.dot((self.W_pca[:,:n_components]).T)
+        X=X+self.mean
         # END YOUR CODE
 
         return X
@@ -185,7 +217,18 @@ class LDA(object):
         # Solve generalized eigenvalue problem for matrices `scatter_between` and `scatter_within`
         # Use `scipy.linalg.eig` instead of numpy's eigenvalue solver.
         # Don't forget to sort the values and vectors in descending order.
-        pass
+        inv = np.linalg.inv(scatter_within)
+        e_vals, e_vecs = np.linalg.eig(inv.dot(scatter_between))
+        index = np.flipud(np.argsort(e_vals))
+        e_vecs = e_vecs[:, index]
+        # X = X.copy()
+        # mu = X.mean(axis=0)
+        # for i in np.unique(y):
+            # mu_i = np.mean(X[y==i, :])
+            # X[y==i, :] = X[y==i, :] - mu
+        # print(scatter_within.dtype)
+        # optim_W = np.linalg.inv(scatter_within) * X
+        # e_vals, e_vecs = scipy.linalg.eig(optim_W)
         # END YOUR CODE
 
         self.W_lda = e_vecs
@@ -221,8 +264,9 @@ class LDA(object):
 
         for i in np.unique(y):
             # YOUR CODE HERE
-            # Get the covariance matrix for class i, and add it to scatter_within
-            pass
+            # Get the covariance matrix for class i, and add it to scatter_within 注意了，是add，对于每一类的数据单独求其协方差矩阵，得到的都是DxD矩阵，然后再相加起来，这种方法跟把所有数据一起来算协方差的结果是不一样的            
+            scatter_within += np.cov(X[y==i, :].T).astype(np.float64) #np.cov函数是把每一行作为一个特征求协方差矩阵，我们要的是对每一列求，所以要先转置一下。又协方差矩阵是对称的，所以不用对结果再进行转置
+            # 得到的Sw是个DxD矩阵，其第i行第j列的元素的含义是，样本点中每类样本点内部的数据中，第i个维度特征与第j个维度特征的协方差（与有几类标签无关）
             # END YOUR CODE
 
         return scatter_within
@@ -247,11 +291,15 @@ class LDA(object):
         _, D = X.shape
         assert X.shape[0] == y.shape[0]
         scatter_between = np.zeros((D, D))
-
+        X = X.copy() #这句是我自己加的
         mu = X.mean(axis=0)
         for i in np.unique(y):
             # YOUR CODE HERE
-            pass
+            X_i = X[y==i]
+            mu_i = np.mean(X_i,axis=0)            
+            N_i = X_i.shape[0]
+            # X[y==i, :] = mu_i #把同类样本点的每一行替换成该类均值，然后把整个矩阵全部拿去计算，相当于把公式中的Ni也考虑了进去，就不需要再对矩阵做什么加权叠加了
+            scatter_between += N_i * np.cov((mu_i-mu).T).astype(np.float64)
             # END YOUR CODE
 
         return scatter_between
@@ -270,7 +318,7 @@ class LDA(object):
         X_proj = None
         # YOUR CODE HERE
         # project onto a subspace of dimension `n_components` using `self.W_lda`
-        pass
+        X_proj = np.dot(X, self.W_lda[:, :n_components])
         # END YOUR CODE
 
         assert X_proj.shape == (N, n_components), "X_proj doesn't have the right shape"

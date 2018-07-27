@@ -1,8 +1,10 @@
 import numpy as np
 from skimage import color
+from skimage import filters
+import copy
 
 
-def energy_function(image):
+def energy_function(image): #对它的计算方法不是很理解，按零延拓正常计算边界不好吗？
     """Computes energy of the input image.
 
     For each pixel, we will sum the absolute value of the gradient in each direction.
@@ -17,12 +19,25 @@ def energy_function(image):
         out: numpy array of shape (H, W)
     """
     H, W, _ = image.shape
-    out = np.zeros((H, W))
-
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
-
+    image_gray = np.dot(image[...,:3], [0.299, 0.587, 0.114])
+    G_x, G_y = np.gradient(image_gray)
+    out = np.abs(G_x) + np.abs(G_y)
+    # out = np.zeros((H, W))
+    # for i in range(1, H-1):
+        # for j in range(1, W-1):
+            # out[i, j] = abs(image_gray[i+1, j] - image_gray[i-1, j]) / 2 + abs(image_gray[i, j+1] - image_gray[i, j-1]) / 2
+    # for i in range(1, H-1):
+        # out[i, 0] = 0.5 * abs(image_gray[i-1, 0] - image_gray[i+1, 0]) + abs(image_gray[i, 0] - image_gray[i, 1])
+        # out[i, W-1] = 0.5 * abs(image_gray[i-1, W-1] - image_gray[i+1, W-1]) + abs(image_gray[i, W-1] - image_gray[i, W-2])
+    # for i in range(1, W-1):
+        # out[0, i] = 0.5 * abs(image_gray[0, i-1] - image_gray[0, i+1]) + abs(image_gray[0, i] - image_gray[1, i])
+        # out[H-1, i] = 0.5 * abs(image_gray[H-1, i-1] - image_gray[H-1, i+1]) + abs(image_gray[H-1, i] - image_gray[H-2, i])
+    
+    # out[0, 0] = abs(image_gray[1, 0] - image_gray[0, 0]) + abs(image_gray[0, 1] - image_gray[0, 0])
+    # out[0, W-1] = abs(image_gray[0, W-2] - image_gray[0, W-1]) + abs(image_gray[1, W-1] - image_gray[0, W-1])
+    # out[H-1, 0] = abs(image_gray[H-2, 0] - image_gray[H-1, 0]) + abs(image_gray[H-1, 1] - image_gray[H-1, 0])
+    # out[H-1, W-1] = abs(image_gray[H-2, W-1] - image_gray[H-1, W-1]) + abs(image_gray[H-1, W-2] - image_gray[H-1, W-1])
+    
     return out
 
 
@@ -47,6 +62,7 @@ def compute_cost(image, energy, axis=1):
         cost: numpy array of shape (H, W)
         paths: numpy array of shape (H, W) containing values -1, 0 or 1
     """
+    #-1代表从左边（上边）过来，0代表从正上方（正左方）过来，1代表从右边（下边）过来
     energy = energy.copy()
 
     if axis == 0:
@@ -59,11 +75,36 @@ def compute_cost(image, energy, axis=1):
 
     # Initialization
     cost[0] = energy[0]
-    paths[0] = 0  # we don't care about the first row of paths
-
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
+    paths[0] = 0  # we don't care about the first row of paths    
+    for i in range(1, H):
+        center = cost[i-1, :]
+        left = np.hstack(([100000.], cost[i-1, 0: -1]))
+        right = np.hstack(([cost[i-1, 1:], [100000.]]))
+        temp = np.vstack((left, center, right))
+        cost[i, :] = energy[i, :] + np.min(temp, 0)
+        paths[i, :] = np.argmin(temp, axis=0) - 1 #十分巧妙地将左中右与-1 0 1对应了起来
+    # mini_energy = np.zeros(W)
+    # for i in range(1, H):    
+        # mini_energy[0] = min(cost[i-1, 0], cost[i-1, 1])
+        # if cost[i-1, 0] < cost[i-1, 1]:
+            # paths[i, 0] = 0
+        # else:
+            # paths[i, 0] = 1
+        # mini_energy[W-1] = min(cost[i-1, W-1], cost[i-1, W-2])
+        # if cost[i-1, W-1] < cost[i-1, W-2]:
+            # paths[i, W-1] = 0
+        # else:
+            # paths[i, W-1] = -1
+            
+        # for j in range(1, W-1):
+            # mini_energy[j] = min(cost[i-1, j], cost[i-1, j-1], cost[i-1, j+1])
+            # if mini_energy[j] == cost[i-1, j]:
+                # paths[i, j] = 0
+            # elif mini_energy[j] == cost[i-1, j-1]:
+                # paths[i, j] = -1
+            # else:
+                # paths[i, j] = 1
+        # cost[i] = mini_energy + energy[i]    
 
     if axis == 0:
         cost = np.transpose(cost, (1, 0))
@@ -97,10 +138,8 @@ def backtrack_seam(paths, end):
 
     # Initialization
     seam[H-1] = end
-
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
+    for i in range(H-2, -1, -1):
+        seam[i] = seam[i+1] + paths[i+1, seam[i+1]]
 
     # Check that seam only contains values in [0, W-1]
     assert np.all(np.all([seam >= 0, seam < W], axis=0)), "seam contains values out of bounds"
@@ -123,12 +162,15 @@ def remove_seam(image, seam):
 
     # Add extra dimension if 2D input
     if len(image.shape) == 2:
-        image = np.expand_dims(image, axis=2)
+        image = np.expand_dims(image, axis=2)        
 
-    out = None
+    # out = None
+    out = np.zeros((image.shape[0], image.shape[1]-1, image.shape[2]))
     H, W, C = image.shape
+    
     ### YOUR CODE HERE
-    pass
+    for i in range(0, H):
+        out[i, :, :] = np.delete(image[i, :, :], seam[i], axis=0)
     ### END YOUR CODE
     out = np.squeeze(out)  # remove last dimension if C == 1
 
@@ -169,9 +211,14 @@ def reduce(image, size, axis=1, efunc=energy_function, cfunc=compute_cost):
     assert size > 0, "Size must be greater than zero"
 
     ### YOUR CODE HERE
-    pass
+    #axis = 1是去掉一列
+    for i in range(0, W-size):
+        energy = efunc(out)
+        vcost, vpaths = cfunc(out, energy)
+        end = np.argmin(vcost[-1])
+        seam = backtrack_seam(vpaths, end)
+        out = remove_seam(out, seam)
     ### END YOUR CODE
-
     assert out.shape[1] == size, "Output doesn't have the right shape"
 
     if axis == 0:
@@ -196,7 +243,8 @@ def duplicate_seam(image, seam):
     H, W, C = image.shape
     out = np.zeros((H, W + 1, C))
     ### YOUR CODE HERE
-    pass
+    for i in range(0, H):
+        out[i, :, :] = np.insert(image[i, :, :], seam[i], values=image[i, seam[i], :], axis=0) 
     ### END YOUR CODE
 
     return out
@@ -234,7 +282,12 @@ def enlarge_naive(image, size, axis=1, efunc=energy_function, cfunc=compute_cost
     assert size > W, "size must be greather than %d" % W
 
     ### YOUR CODE HERE
-    pass
+    for i in range(0, size-W):
+        energy = efunc(out)
+        vcost, vpaths = cfunc(out, energy)
+        end = np.argmin(vcost[-1])
+        seam = backtrack_seam(vpaths, end)
+        out = duplicate_seam(out, seam)
     ### END YOUR CODE
 
     if axis == 0:
@@ -284,7 +337,6 @@ def find_seams(image, k, axis=1, efunc=energy_function, cfunc=compute_cost):
     #     [[1, 2, 3, 4],
     #      [1, 2, 3, 4]]
     indices = np.tile(range(W), (H, 1))  # shape (H, W)
-
     # We keep track here of the seams removed in our process
     # At the end of the process, seam number i will be stored as the path of value i+1 in `seams`
     # An example output for `seams` for two seams in a (3, 4) image can be:
@@ -307,11 +359,11 @@ def find_seams(image, k, axis=1, efunc=energy_function, cfunc=compute_cost):
         # Store the new seam with value i+1 in the image
         # We can assert here that we are only writing on zeros (not overwriting existing seams)
         assert np.all(seams[np.arange(H), indices[np.arange(H), seam]] == 0), \
-            "we are overwriting seams"
-        seams[np.arange(H), indices[np.arange(H), seam]] = i + 1
+            "we are overwriting seams" #保证找到的seam像素点之前没被找到过
+        seams[np.arange(H), indices[np.arange(H), seam].astype(np.int)] = np.int(i + 1) #把这些像素点对应位置做上标记
 
         # We remove the indices used by the seam, so that `indices` keep the same shape as `image`
-        indices = remove_seam(indices, seam)
+        indices = remove_seam(indices, seam).astype(np.int) #indices随着remove的过程不断变瘦，但是它的元素值——seam的列号却一直保存了下来。更新seams看的不是indices的行号列号，而是里面的元素值！
 
     if axis == 0:
         seams = np.transpose(seams, (1, 0))
@@ -352,7 +404,14 @@ def enlarge(image, size, axis=1, efunc=energy_function, cfunc=compute_cost):
     assert size <= 2 * W, "size must be smaller than %d" % (2 * W)
 
     ### YOUR CODE HERE
-    pass
+    indices = np.tile(range(W), (H, 1))  # shape (H, W)
+    seams = find_seams(out, size - W)
+    for i in range(0, size-W):
+        index_seam = np.argwhere(seams == i+1)[:,1]
+        seam = indices[np.arange(H), index_seam]
+        out = duplicate_seam(out, seam)
+        for j in range(0, H):
+            indices[j, index_seam[j]:] += 1 #更新变化了的列号
     ### END YOUR CODE
 
     if axis == 0:
@@ -379,7 +438,8 @@ def compute_forward_cost(image, energy):
         cost: numpy array of shape (H, W)
         paths: numpy array of shape (H, W) containing values -1, 0 or 1
     """
-
+    #我理解的话 因为你energy是原图像的梯度和。但是你要删一个seam的话 会有原来碰不到的像素碰到一起。用旧的梯度没意义吧。用新碰到一起的像素值的差可以反映一种边界信息吧。差值越大说明在边界
+    #公式中的P是能量的意思，图片里的p是像素的意思
     image = color.rgb2gray(image)
     H, W = image.shape
 
@@ -394,7 +454,19 @@ def compute_forward_cost(image, energy):
     paths[0] = 0  # we don't care about the first row of paths
 
     ### YOUR CODE HERE
-    pass
+    # print(image[:,1,np.newaxis].shape, image.shape, image[:, -2].shape)
+    image_tmp = np.hstack((image[:, 1, np.newaxis], image, image[:, -2, np.newaxis]))
+    # print(image_tmp.shape)
+    for i in range(1, H):
+        center = np.abs(image_tmp[i, :-2] - image_tmp[i, 2:]) + cost[i-1, :]
+        # print(center.shape)
+        # print(np.abs(image_tmp[i, : -2] - image_tmp[i, 2:]).shape, np.abs(image_tmp[i, : -2] - image_tmp[i-1, 1:-1]).shape, np.hstack(([100000.], cost[i-1, 0:-1])).shape)
+        left = np.abs(image_tmp[i, : -2] - image_tmp[i, 2:]) + np.abs(image_tmp[i, : -2] - image_tmp[i-1, 1:-1]) + np.hstack(([100000.], cost[i-1, 0:-1]))
+        right = np.abs(image_tmp[i, : -2] - image_tmp[i, 2:]) + np.abs(image_tmp[i-1, 1: -1] - image_tmp[i, 2:]) + np.hstack((cost[i-1, 1:], [100000.]))
+        
+        temp = np.vstack((left, center, right))
+        cost[i, :] = energy[i, :] + np.min(temp, 0)
+        paths[i, :] = np.argmin(temp, axis=0) - 1 
     ### END YOUR CODE
 
     # Check that paths only contains -1, 0 or 1

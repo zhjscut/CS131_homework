@@ -26,8 +26,10 @@ def compute_distances(X1, X2):
     # in particular you should not use functions from scipy.
     #
     # HINT: Try to formulate the l2 distance using matrix multiplication
-
-    pass
+    #由公式 求和(a-b)^2 = 求和a^2+b^2-2ab，将其分成两部分进行求和最后相加：求和a^2+b^2+求和(-2ab)
+    
+    sum_X1, sum_X2 = np.meshgrid(np.sum(X1 ** 2, axis=1), np.sum(X2 ** 2, axis=1))
+    dists = np.sqrt((sum_X1 + sum_X2).T - 2 * np.dot(X1, X2.T))
     # END YOUR CODE
 
     assert dists.shape == (M, N), "dists should have shape (M, N), got %s" % dists.shape
@@ -65,7 +67,20 @@ def predict_labels(dists, y_train, k=1):
         # label.
 
         # YOUR CODE HERE
-        pass
+        closest_y = y_train[np.argsort(dists[i, :])][0:k]
+        closest_y = np.sort(closest_y)
+        max_y_num = 0
+        max_y_label = 0
+        cursor = 0
+        while 1:
+            if cursor >= closest_y.shape[0]:
+                break
+            y_num = np.sum(closest_y==closest_y[cursor]) #含有某个标签的k最近邻数
+            if y_num > max_y_num:
+                max_y_label = closest_y[cursor]
+                max_y_num = y_num
+            cursor += y_num
+        y_pred[i] = max_y_label
         # END YOUR CODE
 
     return y_pred
@@ -103,7 +118,7 @@ def split_folds(X_train, y_train, num_folds):
 
     validation_size = X_train.shape[0] // num_folds
     training_size = X_train.shape[0] - validation_size
-
+    
     X_trains = np.zeros((num_folds, training_size, X_train.shape[1]))
     y_trains = np.zeros((num_folds, training_size), dtype=np.int)
     X_vals = np.zeros((num_folds, validation_size, X_train.shape[1]))
@@ -111,7 +126,13 @@ def split_folds(X_train, y_train, num_folds):
 
     # YOUR CODE HERE
     # Hint: You can use the numpy array_split function.
-    pass
+    total = np.arange(X_train.shape[0])
+    for fold in range(num_folds):
+        split_result = np.split(total, [fold*validation_size, (fold+1)*validation_size]) #split函数对于分割点超过向量总长的值会在末端切割，不会报错，所以无需做其它判断分支
+        X_vals[fold, :, :] = X_train[split_result[1], :]
+        X_trains[fold, :, :] = X_train[np.hstack((split_result[0], split_result[2])), :]
+        y_vals[fold, :] = y_train[split_result[1]]
+        y_trains[fold, :] = y_train[np.hstack((split_result[0], split_result[2]))]
     # END YOUR CODE
 
     return X_trains, y_trains, X_vals, y_vals

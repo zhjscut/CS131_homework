@@ -11,10 +11,32 @@ def dot_product(vector1, vector2):
         out: numpy array of shape (x,x) (scalar if x = 1)
     """
     out = None
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
-
+    if len(vector1.shape) == 1 and len(vector2.shape) == 1:
+        if vector1.shape[0] == 1 or vector2.shape[0] ==1:
+            out = np.array(vector1 * vector2)
+            return out
+        elif vector1.shape[0] != vector2.shape[0]:
+            raise ValueError('invalid value!')
+            return None
+        out = np.array([np.sum(vector1 * vector2)])
+    elif len(vector1.shape) == 1: #if v1 is a vector
+        out = np.zeros(vector2.shape[1])
+        for i in range(vector2.shape[1]):
+            out[i] = np.sum(vector1 * vector2[:, i])
+        return out
+    elif len(vector2.shape) == 1: #if v2 is a vector
+        # print(vector1.shape)
+        out = np.zeros(vector1.shape[0])
+        for i in range(vector1.shape[0]):
+            out[i] = np.sum(vector1[i, :] * vector2)
+        return out
+    elif vector1.shape[1] != vector2.shape[0]: #both of them are matrix
+        raise ValueError('invalid value!')
+    else:
+        out = np.zeros([vector1.shape[0], vector2.shape[1]])
+        for i in range(vector1.shape[0]):
+            for j in range(vector2.shape[1]):
+                out[i, j] = np.sum(vector1[i, :] * vector2[:, j])
     return out
 
 def matrix_mult(M, vector1, vector2):
@@ -28,9 +50,10 @@ def matrix_mult(M, vector1, vector2):
         out: numpy matrix of shape (1, x)
     """
     out = None
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
+    out1 = dot_product(vector1, vector2)
+    out2 = dot_product(M, vector1)
+    print(out1, out2)
+    out = dot_product(out1, out2)
 
     return out
 
@@ -47,11 +70,38 @@ def svd(matrix):
     u = None
     s = None
     v = None
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
+    v0 = dot_product(matrix.T, matrix)
+    eigen = np.linalg.eig(v0)
+    eigen_vals = eigen[0]
+    v = eigen[1] #v is the eigen_vector
+    u = dot_product(matrix, v)
+    new_orth_len = np.zeros([u.shape[1], u.shape[1]])
+    orth_sq = dot_product(u.T, u)
+
+    for i in range(u.shape[1]):
+        for j in range(u.shape[0]):
+            u[i][j] /= (orth_sq[j][j] ** 0.5)
+        new_orth_len[j][j] = orth_sq[j][j] ** 0.5
+
 
     return u, s, v
+
+def gen_inv(a):
+    a_sq = np.dot(a.T, a)
+    eigen = np.linalg.eig(a_sq)
+    eigen_vals = eigen[0]
+    eigen_vectors = eigen[1]
+
+    orth = a.dot(eigen_vectors)
+    new_orth_len = np.zeros([orth.shape[1], orth.shape[1]])
+    orth_sq = orth.T.dot(orth)
+
+    for j in range(orth.shape[1]):
+        for i in range(orth.shape[0]):
+            orth[i][j] /= (orth_sq[j][j] ** 0.5)
+        new_orth_len[j][j] = orth_sq[j][j] ** 0.5
+
+    return (orth, new_orth_len, eigen_vectors)
 
 def get_singular_values(matrix, n):
     """ Return top n singular values of matrix
@@ -64,9 +114,9 @@ def get_singular_values(matrix, n):
     """
     singular_values = None
     u, s, v = svd(matrix)
-    ### YOUR CODE HERE
-    pass
-    ### END YOUR CODE
+    values = np.diag(s)
+    values = sorted(values, reverse = True)
+    singular_values = values[0:n]
     return singular_values
 
 def eigen_decomp(matrix):

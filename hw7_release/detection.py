@@ -17,11 +17,11 @@ def hog_feature(image, pixel_per_cell = 8):
         pixel_per_cell: number of pixels in each cell, an argument for hog descriptor
         
     Returns:
-        score: a vector of hog representation
+        hogFeature: a vector of hog representation
         hogImage: an image representation of hog provided by skimage
     '''
     ### YOUR CODE HERE
-    pass
+    hogFeature, hogImage = feature.hog(image, pixels_per_cell=(pixel_per_cell, pixel_per_cell), visualise=True)
     ### END YOUR CODE
     return (hogFeature, hogImage)
 
@@ -52,7 +52,22 @@ def sliding_window(image, base_score, stepSize, windowSize, pixel_per_cell=8):
     response_map = np.zeros((H//stepSize+1, W//stepSize+1))
     
     ### YOUR CODE HERE
-    pass
+    # sum_hog = np.sum(base_score) #用于做相关时去除能量的影响
+    for i in range(0, response_map.shape[0]): #考虑到H和W不一定是winH和winW的整数倍，是否可以采取这样的措施：循环只到倒数第二行/列，最后一行/列单独处理，最后剩下多大就跟多大的face_feature做相关，最后记得均衡一下（得到的响应值/最后一块的大小*正常块的大小）
+        for j in range(0, response_map.shape[1]):
+            image_batch = pad_image[i*stepSize : i*stepSize+winH, j*stepSize : j*stepSize+winW]
+            (hogFeature, _) = hog_feature(image_batch, pixel_per_cell)
+            response_map[i, j] = np.sum(base_score * hogFeature) #/ (sum_hog * np.sum(hogFeature)) #之前还在想用不用去除能量的影响，以为一张白纸跟人脸做相关会是最大，后来发现不对，做相关的不是原像素而是hog特征，而白纸的hog特征是全零，因此不会是最大。而且去除能量的效果并不好，得到了错误的识别结果，综上，不需要去除能量的影响
+            # 这样得到的位置似乎更精确一点
+            # if score>max_score:
+            #     max_score=score
+            #     maxr=i*stepSize-winH//2
+            #     maxc=j*stepSize-winW//2
+    max_index, max_score = np.argmax(response_map), np.max(response_map)
+    maxr, maxc = int(max_index / response_map.shape[1] - np.ceil(winH//2/stepSize)), int(max_index % response_map.shape[1] - np.ceil(winW//2/stepSize)) #因为直接argmax出来的下标是与填充后的图像相对应的下标，而输出要的是对应与原图片，所以需要做一下校正
+    # max_score = response_map[maxr, maxc] #不能用这个语句来求解最大值，一开始没有校正时是可以的，加了校正之后的位置就是不是原来的响应图的最大值了
+    maxr, maxc = maxr * int(stepSize), maxc * int(stepSize) #将response_map以及最大值下标转换成原图大小
+    response_map = resize(response_map,(H,W),preserve_range=1)    
     ### END YOUR CODE
     
     
@@ -81,11 +96,16 @@ def pyramid(image, scale=0.9, minSize=(200, 100)):
     images.append((current_scale, image))
     # keep looping over the pyramid
     ### YOUR CODE HERE
-    pass
+    while 1:
+        image = rescale(image, scale)
+        current_scale *= scale
+        if image.shape[0] < minSize[0] or image.shape[1] < minSize[1]: #小于图片大小的下限时退出循环，不保存低于下限的那张图片
+            break 
+        images.append((current_scale, image))
     ### END YOUR CODE
     return images
 
-def pyramid_score(image,base_score, shape, stepSize=20, scale = 0.9, pixel_per_cell = 8):
+def pyramid_score(image, base_score, shape, stepSize=20, scale = 0.9, pixel_per_cell = 8):
     '''
     Calculate the maximum score found in the image pyramid using sliding window.
     
@@ -107,8 +127,18 @@ def pyramid_score(image,base_score, shape, stepSize=20, scale = 0.9, pixel_per_c
     max_scale = 1.0
     max_response_map =np.zeros(image.shape)
     images = pyramid(image, scale)
+
     ### YOUR CODE HERE
-    pass
+    for result in images:
+        (scale, image) = result
+        (score, r, c, response_map) = sliding_window(image, base_score, stepSize, shape, pixel_per_cell)
+        print(score)
+        if score > max_score:
+            max_score = score
+            maxr = r
+            maxc = c
+            max_scale = scale
+            max_response_map = response_map
     ### END YOUR CODE
     return max_score, maxr, maxc, max_scale, max_response_map
 
@@ -134,7 +164,10 @@ def compute_displacement(part_centers, face_shape):
     '''
     d = np.zeros((part_centers.shape[0],2))
     ### YOUR CODE HERE
-    pass
+    face_center = np.array([(face_shape[0]-1)/2, (face_shape[1]-1)/2]) #在该样本集中，脸部占满了整个图像，图像的中心即为脸部的中心。注意坐标是从0到n-1
+    d = face_center - part_centers
+    mu = np.round(np.mean(d, axis=0)).astype(np.int)
+    sigma = np.std(d, axis=0)
     ### END YOUR CODE
     return mu, sigma
         
@@ -150,7 +183,22 @@ def shift_heatmap(heatmap, mu):
             new_heatmap: np array of (h,w)
     '''
     ### YOUR CODE HERE
-    pass
+    heatmap = heatmap / np.max(heatmap) #暂时关掉，后面要开回来
+    h = heatmap
+    dx, dy = mu[0], mu[1]
+    assert abs(dx) <= heatmap.shape[0] and abs(dy) <= heatmap.shape[1], 'wrong input mu'
+    # 圆周移位。原以为要分情况讨论，最后发现mu在4个象限对应的式子的形式一模一样
+    new_heatmap = np.vstack(( np.hstack((h[-dx:, -dy:], h[-dx:, 0:-dy])), np.hstack((h[0:-dx, -dy:], h[0:-dx, 0:-dy])) ))
+    # if dx >= 0 and dy >= 0:
+    #     new_heatmap = np.vstack(( np.hstack((h[-dx:, -dy:], h[-dx:, 0:-dy])), np.hstack((h[0:-dx, -dy:], h[0:-dx, 0:-dy])) ))
+    # elif dx >= 0 and dy < 0:
+    #     new_heatmap = np.vstack(( np.hstack((h[-dx:, -dy:], h[-dx:, 0:-dy])), np.hstack((h[0:-dx, -dy:], h[0:-dx, 0:-dy])) ))
+    # elif dx < 0 and dy >= 0:
+    #     new_heatmap = np.vstack(( np.hstack((h[-dx:, -dy:], h[-dx:, 0:-dy])), np.hstack((h[0:-dx, -dy:], h[0:-dx, 0:-dy])) ))
+    # elif dx < 0 and dy < 0:
+    #     new_heatmap = np.vstack(( np.hstack((h[-dx:, -dy:], h[-dx:, 0:-dy])), np.hstack((h[0:-dx, -dy:], h[0:-dx, 0:-dy])) ))
+
+        
     ### END YOUR CODE
     return new_heatmap
     
@@ -170,10 +218,18 @@ def gaussian_heatmap(heatmap_face, heatmaps, sigmas):
         new_image: an image np array of (h,w) after gaussian convoluted
     '''
     ### YOUR CODE HERE
-    pass
+    heatmap = np.zeros(heatmap_face.shape)
+    # 各个热力图已在shift函数中被归一化过，此处无需重复归一化
+    for i in range(len(heatmaps)):
+        heatmap_i = heatmaps[i]
+        sigma = sigmas[i]
+        heatmap += gaussian(heatmap_i, sigma)
+    heatmap += heatmap_face
+    index = np.argmax(heatmap)
+    r,c = index // heatmap.shape[1], index % heatmap.shape[1]
     ### END YOUR CODE
     return heatmap, r , c
-            
+
       
 def detect_multiple(image, response_map):
     '''
